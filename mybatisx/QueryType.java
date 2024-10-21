@@ -1,4 +1,4 @@
-package com.spider.mybatix;
+package com.icc.framework.api.annotation.mybatisx;
 
 /**
  * @Description: 查询类型
@@ -9,7 +9,7 @@ public enum QueryType {
     EQ, // 相等
     NE, // 不相等
     LIKE, // 模糊查询
-    MULTIPLE_LIKE, // 多模糊
+    MULTI_LIKE, // 多模糊
     LIKER, // 模糊查询(右)
     LIKEL, //  模糊查询(左)
     IN, //  包含

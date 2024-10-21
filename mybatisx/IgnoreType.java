@@ -1,4 +1,4 @@
-package com.spider.mybatix;
+package com.icc.framework.api.annotation.mybatisx;
 
 public enum IgnoreType {
     //都放过

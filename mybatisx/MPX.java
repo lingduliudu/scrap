@@ -1,15 +1,11 @@
-package com.spider.mybatix;
+package com.icc.account.mybatisx;
 
-import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.extern.slf4j.Slf4j;
 
-import java.lang.reflect.Method;
 
 @Slf4j
-public class WP {
-
+public class MPX {
     /**
      * @Description: 直接查询
      * @author Hao.Yuan
@@ -17,8 +13,7 @@ public class WP {
      */
     public static QueryWrapper to(Object data){
         try{
-            QueryWrapper orgin = new WrapperParse().to(data);
-            return orgin;
+            return new WrapperParse().to(data);
         }catch(Exception e){
             log.error(e.getMessage(),e);
             throw new RuntimeException(e.getMessage());

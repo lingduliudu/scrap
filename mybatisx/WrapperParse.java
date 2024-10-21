@@ -1,10 +1,16 @@
-package com.spider.mybatix;
+package com.icc.account.mybatisx;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.icc.framework.api.annotation.KV;
+import com.icc.framework.api.annotation.mybatisx.IMPXConverter;
+import com.icc.framework.api.annotation.mybatisx.IgnoreType;
+import com.icc.framework.api.annotation.mybatisx.QueryField;
+import com.icc.framework.api.annotation.mybatisx.QueryType;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class WrapperParse {
 
@@ -28,6 +34,7 @@ public class WrapperParse {
         querySet.add(QueryType.LT);
         querySet.add(QueryType.LE);
         querySet.add(QueryType.LIKE);
+        querySet.add(QueryType.MULTI_LIKE);
         querySet.add(QueryType.LIKEL);
         querySet.add(QueryType.LIKER);
         querySet.add(QueryType.IN);
@@ -74,23 +81,9 @@ public class WrapperParse {
             Object fieldValue = field.get(t);
             fieldMap.put(field.getName(), fieldValue);
         }
-        Map<String,List<Field>> orGroupMap = new HashMap<>();
         for (Field field : fields) {
             QueryField qf = field.getAnnotation(QueryField.class);
             if (qf == null) continue;
-            // 如果属于特殊组
-            if(qf.isOr()){
-                if(orGroupMap.get(qf.group())!=null){
-                    List<Field> gFs = orGroupMap.get(qf.group());
-                    gFs.add(field);
-                    orGroupMap.put(qf.group(),gFs);
-                }else{
-                    List<Field> gFs = new ArrayList<>();
-                    gFs.add(field);
-                    orGroupMap.put(qf.group(),gFs);
-                }
-                continue;
-            }
             // 如果是排序的则需要进行特殊处理
             if (isOrderBy(qf.type())) {
                 sortMap.put(qf.sortIndex(), field);
@@ -98,204 +91,23 @@ public class WrapperParse {
             }
             field.setAccessible(true);
             Object fieldValue = field.get(t);
-            resetQueryWrapper(queryWrapper, fieldValue, qf, fieldMap);
+            resetQueryWrapper(queryWrapper,field, fieldValue, qf, fieldMap);
 
         }
-        resetOrGroup(queryWrapper,orGroupMap,t,fieldMap);
-
         // 如果排序不是空
         if (!sortMap.isEmpty()) {
             for (Field field : sortMap.values()) {
                 QueryField qf = field.getAnnotation(QueryField.class);
                 field.setAccessible(true);
                 Object fieldValue = field.get(t);
-                resetQueryWrapper(queryWrapper, fieldValue, qf, fieldMap);
+                resetQueryWrapper(queryWrapper,field, fieldValue, qf, fieldMap);
             }
         }
         return queryWrapper;
     }
 
-    public boolean emptyOr(List<Field> orList,Object obj)throws Exception{
-        for(Field f:orList){
-            f.setAccessible(true);
-            Object value = f.get(obj);
-            QueryField qf = f.getAnnotation(QueryField.class);
-            boolean simpleQueryTrim = qf.simpleQueryTrim();
-            if (simpleQueryTrim && value != null && value instanceof String)value = ((String) value).trim();
-            // 非忽略
-            if (!ignoreExclude.contains(qf.type())) {
-                if (qf.ignoreType() == IgnoreType.NULL) {
-                    if (value == null) {
-                        continue;
-                    }
-                }
-                if (qf.ignoreType() == IgnoreType.EMPTY) {
-                    if (value == null || "".equals(value.toString())) {
-                        continue;
-                    }
-                }
-            }
-            // 非忽略需要查询
-            if(!querySet.contains(qf.type()))continue;
-            if(qf.type()==QueryType.MATCH){
-                KV[] KVS = qf.match();
-                if (KVS == null || KVS.length == 0) {
-                    break;
-                }
-                // 如果是map对应的则需要进行map的拆分
-                Map<String, String> map = new HashMap<>();
-                for (KV kv : KVS) {
-                    map.put(kv.K(), kv.V());
-                }
-                // 开始匹配操作
-                String mapValue = map.get(String.valueOf(value));
-                if (mapValue != null) return false;
-                if (mapValue == null && !"".equals(qf.miss()))return false;
-                continue;
-            }
 
-            return false;
-        }
-        return true;
-    }
-
-
-
-    public void resetOrGroup(QueryWrapper<?> queryWrapper,Map<String,List<Field>> orGroupMap,Object obj,Map<String, Object> fieldMap)throws Exception{
-        if(orGroupMap.keySet().size() == 0)return;
-        for(String groupKey:orGroupMap.keySet()){
-            List<Field> orList = orGroupMap.get(groupKey);
-            boolean emptyOr = emptyOr(orList,obj);
-            if(emptyOr)continue;
-            queryWrapper.and(x->{
-                for(Field f:orList){
-                    try {
-                        f.setAccessible(true);
-                        Object value = f.get(obj);
-                        QueryField qf = f.getAnnotation(QueryField.class);
-                        boolean simpleQueryTrim = qf.simpleQueryTrim();
-                        if (simpleQueryTrim && value != null && value instanceof String)value = ((String) value).trim();
-                        // 非忽略
-                        if (!ignoreExclude.contains(qf.type())) {
-                            if (qf.ignoreType() == IgnoreType.NULL && value == null) continue;
-                            if (qf.ignoreType() == IgnoreType.EMPTY && (value == null || "".equals(value.toString()))) continue;
-                        }
-                        if (value != null && qf.frontTimeMode() == FrontTimeMode.DAYEND)  value = value.toString() + " 23:59:59";
-                        if (value != null && qf.frontTimeMode() == FrontTimeMode.DAYSTART) value = value.toString() + " 00:00:00";
-
-                        Class clazz = qf.using();
-                        if(!clazz.getName().equals(IMPXConvert.class.getName()))value = ((IMPXConvert)clazz.newInstance()).convert(value);
-                        String[] keys = qf.value();
-                        switch (qf.type()){
-                            case EQ:
-                                for(String skey:keys){
-                                    x.or().eq(skey, value);
-                                }
-                                break;
-                            case NE:
-                                for(String skey:keys){
-                                    x.or().ne(skey, value);
-                                }
-                                break;
-                            case LIKE:
-                                for(String skey:keys){
-                                    x.or().like(skey, value);
-                                }
-                                break;
-                            case LIKER:
-                                for(String skey:keys){
-                                    x.or().likeRight(skey, value);
-                                }
-                                break;
-                            case LIKEL:
-                                for(String skey:keys){
-                                    x.or().likeLeft(skey, value);
-                                }
-                                break;
-                            case IN:
-                                Collection checkCollection = (Collection) value;
-                                if (checkCollection.isEmpty()) {
-                                    if(qf.empty()!=null && !"".equals(qf.empty()))x.or().apply(qf.empty());
-                                } else {
-                                    for(String skey:keys){
-                                        x.or().in(skey, checkCollection);
-                                    }
-                                }
-                                break;
-                            case NOT_IN:
-                                checkCollection = (Collection) value;
-                                if (checkCollection.isEmpty()) {
-                                    if(qf.empty()!=null && !"".equals(qf.empty()))x.or().apply(qf.empty());
-                                } else {
-                                    for(String skey:keys){
-                                        x.or().notIn(skey, checkCollection);
-                                    }
-                                }
-                                break;
-                            case GT:
-                                for(String skey:keys){
-                                    x.or().gt(skey, value);
-                                }
-                                break;
-                            case GE:
-                                for(String skey:keys){
-                                    x.or().ge(skey, value);
-                                }
-                                break;
-                            case LT:
-                                for(String skey:keys){
-                                    x.or().lt(skey, value);
-                                }
-                                break;
-                            case LE:
-                                for(String skey:keys){
-                                    x.or().le(skey, value);
-                                }
-                                break;
-                            case NOT_NULL:
-                                for(String skey:keys){
-                                    x.or().isNotNull(skey);
-                                }
-                                break;
-                            case NULL:
-                                for(String skey:keys){
-                                    x.or().isNull(skey);
-                                }
-                                break;
-                            case INNER:
-                                for(String skey:keys){
-                                    String newKey = resetHoldValue(skey, fieldMap);
-                                    x.or().apply(newKey);
-                                }
-                                break;
-                            case MATCH:
-                                KV[] KVS = qf.match();
-                                if (KVS == null || KVS.length == 0) {
-                                    break;
-                                }
-                                // 如果是map对应的则需要进行map的拆分
-                                Map<String, String> map = new HashMap<>();
-                                for (KV kv : KVS) {
-                                    map.put(kv.K(), kv.V());
-                                }
-                                // 开始匹配操作
-                                String mapValue = map.get(String.valueOf(value));
-                                mapValue = resetHoldValue(mapValue, fieldMap);
-                                if (mapValue != null) x.or().apply(mapValue);
-                                if (mapValue == null && !"".equals(qf.miss())) x.or().apply(qf.miss());
-                                break;
-                        }
-                    } catch (IllegalAccessException | InstantiationException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                }
-            });
-        }
-
-    }
-
-    public void resetQueryWrapper(QueryWrapper<?> queryWrapper, Object value, QueryField qf, Map<String, Object> fieldMap) throws Exception{
+    public void resetQueryWrapper(QueryWrapper<?> queryWrapper,Field field, Object value, QueryField qf, Map<String, Object> fieldMap) throws Exception{
         Object t = queryWrapper.getEntity();
         boolean simpleQueryTrim = qf.simpleQueryTrim();
         if (simpleQueryTrim && value != null && value instanceof String)value = ((String) value).trim();
@@ -304,46 +116,50 @@ public class WrapperParse {
             if (qf.ignoreType() == IgnoreType.NULL && value == null) return;
             if (qf.ignoreType() == IgnoreType.EMPTY && (value == null || "".equals(value.toString()))) return;
         }
-        if (value != null && qf.frontTimeMode() == FrontTimeMode.DAYEND)  value = value.toString() + " 23:59:59";
-        if (value != null && qf.frontTimeMode() == FrontTimeMode.DAYSTART) value = value.toString() + " 00:00:00";
         Class clazz = qf.using();
-        if(!clazz.getName().equals(IMPXConvert.class.getName()))value = ((IMPXConvert)clazz.newInstance()).convert(value);
-        String[] keys = qf.value();
+        if(!clazz.getName().equals(IMPXConverter.class.getName()))value = ((IMPXConverter)clazz.newInstance()).to(value);
+        String key = qf.value();
+        if("".equals(key) && qf.auto()){
+            // 重赋值
+            String fieldName = field.getName();
+            String snakeCaseString = fieldName.replaceAll("([A-Z])", "_$1").toLowerCase();
+            if (snakeCaseString.startsWith("_")) {
+                snakeCaseString = snakeCaseString.substring(1);
+            }
+            key = snakeCaseString;
+        }
         switch (qf.type()) {
             case EQ:
-                for(String skey:keys){
-                    queryWrapper.eq(skey, value);
-                }
-
+                queryWrapper.eq(key, value);
                 break;
             case NE:
-                for(String skey:keys){
-                    queryWrapper.ne(skey, value);
-                }
+                queryWrapper.ne(key, value);
                 break;
             case LIKE:
-                for(String skey:keys){
-                    queryWrapper.like(skey, value);
-                }
+                queryWrapper.like(key, value);
+                break;
+            case MULTI_LIKE:
+                AtomicReference<Object> ref = new AtomicReference<>();
+                ref.set(value);
+                queryWrapper.and(qw->{
+                    for(String mulitKey:qf.mulitValue()){
+                        qw.or().like(mulitKey,ref.get());
+                    }
+                    return qw;
+                });
                 break;
             case LIKER:
-                for(String skey:keys){
-                    queryWrapper.likeRight(skey, value);
-                }
+                queryWrapper.likeRight(key, value);
                 break;
             case LIKEL:
-                for(String skey:keys){
-                    queryWrapper.likeLeft(skey, value);
-                }
+                queryWrapper.likeLeft(key, value);
                 break;
             case IN:
                 Collection checkCollection = (Collection) value;
                 if (checkCollection.isEmpty()) {
                     if(qf.empty()!=null && !"".equals(qf.empty()))queryWrapper.apply(qf.empty());
                 } else {
-                    for(String skey:keys){
-                        queryWrapper.in(skey, checkCollection);
-                    }
+                    queryWrapper.in(key, checkCollection);
                 }
                 break;
             case NOT_IN:
@@ -351,71 +167,45 @@ public class WrapperParse {
                 if (checkCollection.isEmpty()) {
                     if(qf.empty()!=null && !"".equals(qf.empty()))queryWrapper.apply(qf.empty());
                 } else {
-                    for(String skey:keys){
-                        queryWrapper.notIn(skey, checkCollection);
-                    }
+                    queryWrapper.notIn(key, checkCollection);
                 }
                 break;
             case GT:
-                for(String skey:keys){
-                    queryWrapper.gt(skey, value);
-                }
+                queryWrapper.gt(key, value);
                 break;
             case GE:
-                for(String skey:keys){
-                    queryWrapper.ge(skey, value);
-                }
+                queryWrapper.ge(key, value);
                 break;
             case LT:
-                for(String skey:keys){
-                    queryWrapper.lt(skey, value);
-                }
+                queryWrapper.lt(key, value);
                 break;
             case LE:
-                for(String skey:keys){
-                    queryWrapper.le(skey, value);
-                }
+                queryWrapper.le(key, value);
                 break;
             case NOT_NULL:
-                for(String skey:keys){
-                    queryWrapper.isNotNull(skey);
-                }
+                queryWrapper.isNotNull(key);
                 break;
             case NULL:
-                for(String skey:keys){
-                    queryWrapper.isNull(skey);
-                }
+                queryWrapper.isNull(key);
                 break;
             case GROUP:
-                for(String skey:keys){
-                    queryWrapper.groupBy(skey);
-                }
+                queryWrapper.groupBy(key);
                 break;
             case ASC:
-                for(String skey:keys){
-                    queryWrapper.orderByAsc(skey);
-                }
+                queryWrapper.orderByAsc(key);
                 break;
             case ASC_NOTEMPTY:
-                for(String skey:keys){
-                    queryWrapper.orderByAsc(skey);
-                }
+                if(value !=null && !"".equals(value))queryWrapper.orderByAsc(key);
                 break;
             case DESC:
-                for(String skey:keys){
-                    queryWrapper.orderByDesc(skey);
-                }
+                queryWrapper.orderByDesc(key);
                 break;
             case DESC_NOTEMPTY:
-                for(String skey:keys){
-                    queryWrapper.orderByDesc(skey);
-                }
+                if(value !=null && !"".equals(value))queryWrapper.orderByDesc(key);
                 break;
             case INNER:
-                for(String skey:keys){
-                    String newKey = resetHoldValue(skey, fieldMap);
-                    queryWrapper.apply(newKey);
-                }
+                String newKey = resetHoldValue(key, fieldMap);
+                queryWrapper.apply(newKey);
                 break;
             case MATCH:
                 KV[] KVS = qf.match();
@@ -434,9 +224,7 @@ public class WrapperParse {
                 if (mapValue == null && !"".equals(qf.miss())) queryWrapper.apply(qf.miss());
                 break;
             case LAST:
-                for(String skey:keys){
-                    queryWrapper.last(value.toString());
-                }
+                queryWrapper.last(value.toString());
                 break;
             default:
                 break;

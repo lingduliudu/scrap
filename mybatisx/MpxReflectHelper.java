@@ -1,4 +1,4 @@
-package com.spider.mybatix;
+package com.icc.account.mybatisx;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
