@@ -1,5 +1,5 @@
 package com.spider.mybatix;
 
-public interface IMPXConvert<F,T> {
+public interface IMPXConverter<F,T> {
     T to(F orgin);
 }

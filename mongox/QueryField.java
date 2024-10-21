@@ -13,7 +13,7 @@ public @interface QueryField {
     String regexConfig() default "";
     QueryType queryType() default QueryType.EQ;
     IgnoreType ignoreType() default IgnoreType.EMPTY;
-    QueryLogic queryLogic() default  QueryLogic.AND;  // 未实现
-    String owner() default "TOP"; // 未实现
+    QueryLogic queryLogic() default  QueryLogic.AND;  
+    String owner() default "TOP"; 
     boolean auto() default true;
 }
